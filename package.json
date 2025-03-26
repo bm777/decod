@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "name": "decod",
+  "version": "0.0.0",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "dependencies": {
+    "@devvit/public-api": "0.11.9",
+    "an-array-of-english-words": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.3.2",
+    "vittest": "^1.0.2"
+  }
+}
