@@ -50,7 +50,7 @@ class G,H,I logic;
 class F,J,K,L utility;
 ```
 
-### Functional diagram
+### Functional diagram 
 
 ```mermaid
 flowchart TD
