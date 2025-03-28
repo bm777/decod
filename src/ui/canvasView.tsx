@@ -5,7 +5,8 @@ import {
   placePixel, 
   saveWords,
   getWords,
-  getLastActiveUser
+  getLastActiveUser,
+  getChallengePostLink
 } from '../logic/canvas.js';
 import { decodeWordMatrix } from '../logic/decodeMatrix.js';
 import { 
@@ -134,6 +135,20 @@ export function CanvasView({
     return Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(0));
   }
 
+  const redirectToFullPost = async () => {
+    try {
+      const permalink = await getChallengePostLink(redis, challengeId);
+      if (permalink) {
+        ui.navigateTo(`https://reddit.com${permalink}`);
+      }
+    } catch (error) {
+      ui.showToast({
+        text: "Please open the full post to interact",
+        appearance: "neutral",
+      });
+    }
+  };
+
   async function handlePixelClick(x: number, y: number) {
     if (cooldown) return;
     
@@ -173,7 +188,7 @@ export function CanvasView({
       
       // Start cooldown
       setCooldown(true);
-      setCooldownTime(5); // 5 for testing. for prod, set to 30
+      setCooldownTime(2); // 2 for testing. for prod, set to 5
       cooldownTimer.start();
       // Check for words after placing
       if (localChallengeId) {
@@ -192,10 +207,7 @@ export function CanvasView({
     } catch (error) {
       // Add error handling to help debug issues
       console.error("Error placing pixel:", error);
-      ui.showToast({
-        text: `Error placing pixel: ${error instanceof Error ? error.message : String(error)}`,
-        appearance: "neutral"
-      });
+      redirectToFullPost();
     }
   }
   

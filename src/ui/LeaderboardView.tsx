@@ -123,7 +123,7 @@ export function LeaderboardView({
         <spacer width="24px" />
       </hstack>
 
-      <spacer height="20px" />
+      <spacer height="14px" />
 
       {/* Leaderboard header */}
       <hstack width="100%" padding="medium">

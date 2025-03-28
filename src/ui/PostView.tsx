@@ -3,7 +3,12 @@ import { CanvasView } from './canvasView.js';
 import { LeaderboardView } from './LeaderboardView.js';
 import { HelpView } from './HelpView.js';
 import { PixelText } from './PixelText.js';
-import { getCurrentChallengeId, createNewChallenge } from '../logic/canvas.js';
+import { 
+  getCurrentChallengeId, 
+  createNewChallenge, 
+  storeChallengePostLink, 
+  getChallengePostLink 
+} from '../logic/canvas.js';
 
 
 export function postView({ context }: { context: Devvit.Context }): JSX.Element {
@@ -35,20 +40,41 @@ export function postView({ context }: { context: Devvit.Context }): JSX.Element 
     setState('home');
   }
   
-  // Function to handle + JOIN button click - directly join latest challenge
+  // Function to handle + JOIN button click - redirect to latest challenge post
   const handleJoin = async () => {
     try {
       // Get the current challenge ID (latest challenge)
       const latestChallengeId = await getCurrentChallengeId(redis);
       
-      // Set the selected challenge ID and go to canvas
-      setSelectedChallengeId(latestChallengeId);
-      setState('canvas');
+      if (latestChallengeId) {
+        // Get the permalink for this challenge directly from Redis
+        const permalink = await getChallengePostLink(redis, latestChallengeId);
+        
+        if (permalink) {
+          // Navigate to the challenge post
+          ui.showToast({
+            text: `Joining Challenge #${latestChallengeId}...`,
+            appearance: "success"
+          });
+          ui.navigateTo(`https://reddit.com${permalink}`);
+        } else {
+          ui.showToast({
+            text: `Couldn't find Challenge #${latestChallengeId} post link`,
+            appearance: "neutral"
+          });
+        }
+      } else {
+        ui.showToast({
+          text: "No active challenges found",
+          appearance: "neutral"
+        });
+      }
     } catch (error) {
       ui.showToast({
         text: "Failed to join challenge",
         appearance: "neutral"
       });
+      console.error("Error joining challenge:", error);
     }
   };
   
@@ -82,17 +108,19 @@ export function postView({ context }: { context: Devvit.Context }): JSX.Element 
         )
       });
       
+      // IMPORTANT NEW STEP: Store the post permalink in Redis
+      if (newPost?.permalink) {
+        await storeChallengePostLink(redis, newChallengeId, newPost.permalink);
+      }
+      
       ui.showToast({
         text: `Created Challenge #${newChallengeId}! Opening new post...`,
         appearance: "success"
       });
       
-      // Step 3: IMPORTANT - Navigate to the new post instead of staying on the current one
-      if (newPost?.id) {
-        // Open the post in a new tab/window
+      // Step 3: Navigate to the new post
+      if (newPost?.permalink) {
         ui.navigateTo(`https://reddit.com${newPost.permalink}`);
-      } else {
-  
       }
       
     } catch (error) {

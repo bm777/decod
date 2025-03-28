@@ -201,3 +201,29 @@ export async function getChallengeUsers(
   
   return result;
 }
+
+// Store a challenge post permalink
+export async function storeChallengePostLink(
+  redis: any,
+  challengeId: string,
+  permalink: string
+): Promise<void> {
+  if (!challengeId || !permalink) {
+    throw new Error("Challenge ID and permalink are required");
+  }
+  const key = `${CANVAS_KEY_PREFIX}${challengeId}:permalink`;
+  await redis.set(key, permalink);
+}
+
+// Get a challenge post permalink
+export async function getChallengePostLink(
+  redis: any,
+  challengeId: string
+): Promise<string | null> {
+  if (!challengeId) {
+    throw new Error("Challenge ID is required");
+  }
+  const key = `${CANVAS_KEY_PREFIX}${challengeId}:permalink`;
+  const permalink = await redis.get(key);
+  return permalink ? (permalink as string) : null;
+}
