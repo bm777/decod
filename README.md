@@ -1,5 +1,9 @@
 # Decod 2D matrix
 
+### preview
+
+![preview](assets/playing.gif)
+
 ## How to run
 First, you need to install devvit [instructions here](https://developers.reddit.com/docs/quickstart)
 
