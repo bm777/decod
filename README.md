@@ -41,9 +41,6 @@ G --> J[Challenge Management]
 H --> K[Word Detection]
 I --> L[User Scoring/Ranking]
 
-classDef logic fill:#f9f,stroke:#333,stroke-width:2px;
-classDef component fill:#bbf,stroke:#333,stroke-width:2px;
-classDef utility fill:#bfb,stroke:#333,stroke-width:2px;
 
 class A,B,C,D,E component;
 class G,H,I logic;
@@ -72,10 +69,7 @@ flowchart TD
     K -->|Detects| N[Valid English Words]
     L -->|Updates| O[User Rankings]
     
-    style A fill:#ff9,stroke:#333,stroke-width:2px
-    style G,H,I fill:#bbf,stroke:#333,stroke-width:2px
-    style J,K,L fill:#f9f,stroke:#333,stroke-width:2px
-    style M,N,O fill:#bfb,stroke:#333,stroke-width:2px
+
 ```
 
 ### Data flow diagram
