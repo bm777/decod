@@ -1,3 +1,3 @@
-# Decod-QR
+# Decod 2D matrix
 
 coming soon

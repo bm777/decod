@@ -41,7 +41,8 @@ export async function placePixel(
   x: number,
   y: number, 
   color: number,
-  challengeId: string
+  challengeId: string,
+  username?: string  // Optional username parameter
 ): Promise<void> {
   if (!challengeId) {
     throw new Error("Challenge ID is required when placing a pixel");
@@ -55,6 +56,11 @@ export async function placePixel(
   
   // Save updated canvas
   await saveCanvas(redis, canvas, challengeId);
+  
+  // Track the user if a username is provided
+  if (username) {
+    await trackUserPixel(redis, username, challengeId);
+  }
 }
 
 // Create a new challenge
@@ -125,4 +131,73 @@ export async function getWords(
   } catch (e) {
     return null;
   }
+}
+
+// Track users who place pixels in a challenge
+export async function trackUserPixel(
+  redis: any,
+  username: string,
+  challengeId: string
+): Promise<void> {
+  if (!challengeId || !username) {
+    throw new Error("Challenge ID and username are required for tracking");
+  }
+  
+  const key = `${CANVAS_KEY_PREFIX}${challengeId}:users:${username}`;
+  const now = Date.now();
+  await redis.set(key, now.toString());
+  
+  // Also update the last active user for this challenge
+  const lastActiveKey = `${CANVAS_KEY_PREFIX}${challengeId}:lastActive`;
+  await redis.set(lastActiveKey, JSON.stringify({ username, timestamp: now }));
+}
+
+// Get the user who last placed a pixel (potential winner)
+export async function getLastActiveUser(
+  redis: any,
+  challengeId: string
+): Promise<{ username: string, timestamp: number } | null> {
+  if (!challengeId) {
+    throw new Error("Challenge ID is required");
+  }
+  
+  const key = `${CANVAS_KEY_PREFIX}${challengeId}:lastActive`;
+  const userData = await redis.get(key);
+  
+  if (!userData) return null;
+  
+  try {
+    return JSON.parse(userData as string);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Get all users who participated in a challenge
+export async function getChallengeUsers(
+  redis: any,
+  challengeId: string
+): Promise<Record<string, number> | null> {
+  if (!challengeId) {
+    throw new Error("Challenge ID is required");
+  }
+  
+  // Pattern to match all user keys for this challenge
+  const pattern = `${CANVAS_KEY_PREFIX}${challengeId}:users:*`;
+  const keys = await redis.keys(pattern);
+  
+  if (!keys || keys.length === 0) return null;
+  
+  const result: Record<string, number> = {};
+  
+  for (const key of keys) {
+    // Extract username from the key
+    const username = key.replace(`${CANVAS_KEY_PREFIX}${challengeId}:users:`, '');
+    const timestamp = await redis.get(key);
+    if (timestamp) {
+      result[username] = parseInt(timestamp as string, 10);
+    }
+  }
+  
+  return result;
 }

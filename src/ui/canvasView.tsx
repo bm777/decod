@@ -3,11 +3,16 @@ import { PixelText } from './PixelText.js';
 import { 
   getCanvas, 
   placePixel, 
-  createNewChallenge,
   saveWords,
-  getWords
+  getWords,
+  getLastActiveUser
 } from '../logic/canvas.js';
 import { decodeWordMatrix } from '../logic/decodeMatrix.js';
+import { 
+  incrementUserWordCount, 
+  incrementUserPixelCount, 
+  trackUserChallenge, 
+} from '../logic/leaderboard.js';
 
 const GRID_SIZE = 21;
 const PIXEL_SIZE = 15; // pixel size in px
@@ -21,18 +26,51 @@ export function CanvasView({
   onClose: () => void,
   challengeId: string
 }): JSX.Element {
-  const { redis, useChannel, ui } = context;
+  const { redis, useChannel, ui, reddit } = context;
+
+  // legacy loading
   const [canvas, setCanvas] = useState<number[][]>(async () => {
     const loadedCanvas = await getCanvas(redis, challengeId);
     return loadedCanvas || createEmptyCanvas();
   });
+  const [words, setWords] = useState<Record<string, string>>(async () => {
+    const loadedWords = await getWords(redis, challengeId);
+    return loadedWords || {};
+  });
+  
   const [selectedColor, setSelectedColor] = useState(1); // 0=white, 1=black
   const [cooldown, setCooldown] = useState(false);
   const [cooldownTime, setCooldownTime] = useState(0);
-  const [words, setWords] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [localChallengeId, setLocalChallengeId] = useState<string | null>(challengeId);
+  const [lastActiveUser, setLastActiveUser] = useState<{username: string, timestamp: number} | null>(null);
+  const [username, setUsername] = useState<string>(async () => {
+    try {
+      const currentUsername = await reddit.getCurrentUsername();
+      return currentUsername || '';
+    } catch (error) {
+      console.error("Error getting username:", error);
+      return '';
+    }
+  });
   
+  
+  type PixelMessage = {
+    x: number;
+    y: number;
+    color: number;
+    session: string;
+    challengeId: string;
+    username?: string;
+  };
+  
+  type WordsMessage = {
+    words: Record<string, string>;
+    session: string;
+    challengeId: string;
+    type: 'words';
+  };
+
   // Create a unique session ID for this user
   const [sessionId] = useState(() => {
     return Math.random().toString(36).substring(2, 10);
@@ -48,21 +86,6 @@ export function CanvasView({
       setCooldownTime(cooldownTime - 1);
     }
   }, 1000);
-  
-  type PixelMessage = {
-    x: number;
-    y: number;
-    color: number;
-    session: string;
-    challengeId: string;
-  };
-  
-  type WordsMessage = {
-    words: Record<string, string>;
-    session: string;
-    challengeId: string;
-    type: 'words';
-  };
   
   // Set up real-time channel
   const channel = useChannel<PixelMessage | WordsMessage>({
@@ -91,16 +114,20 @@ export function CanvasView({
 
   channel.subscribe();
 
-  // Load initial words on component mount
-  const { data: loadedWords } = useAsync(async () => {
-    return await getWords(redis, challengeId);
-  }, {
-    depends: { challengeId },
-    finally: () => {
+  // Use useAsync properly to load words
+  const { loading: wordsLoading } = useAsync(async () => {
+    try {
+      const loadedWords = await getWords(redis, challengeId);
       if (loadedWords) {
         setWords(loadedWords);
       }
+      return loadedWords;
+    } catch (error) {
+      setApiError(`Failed to load words: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
     }
+  }, {
+    depends: [challengeId]
   });
 
   function createEmptyCanvas(): number[][] {
@@ -109,6 +136,15 @@ export function CanvasView({
 
   async function handlePixelClick(x: number, y: number) {
     if (cooldown) return;
+    
+    // Prevent modification if any valid words have been found
+    if (hasValidWords) {
+      ui.showToast({
+        text: "Challenge solved! Please join the next challenge.",
+        appearance: "neutral"
+      });
+      return;
+    }
 
     // Show debugging toast for API calls
     ui.showToast({
@@ -123,7 +159,7 @@ export function CanvasView({
     
     try {
       // Save to Redis and broadcast to other users
-      await placePixel(redis, x, y, selectedColor, challengeId);
+      await placePixel(redis, x, y, selectedColor, challengeId, username || undefined);
       
       // Send real-time update to other users
       await channel.send({
@@ -132,17 +168,27 @@ export function CanvasView({
         color: selectedColor,
         session: sessionId,
         challengeId: challengeId,
+        username: username || undefined
       });
       
       // Start cooldown
       setCooldown(true);
       setCooldownTime(5); // 5 for testing. for prod, set to 30
       cooldownTimer.start();
-      
       // Check for words after placing
       if (localChallengeId) {
         checkForWords(newCanvas);
+        
+        // Update the last active user info
+        const lastUser = await getLastActiveUser(redis, challengeId);
+        if (lastUser) {
+          setLastActiveUser(lastUser);
+        }
       }
+
+      // Give credit to the user who placed the final pixel
+      await incrementUserPixelCount(redis, username);
+      await trackUserChallenge(redis, username, challengeId);
     } catch (error) {
       // Add error handling to help debug issues
       console.error("Error placing pixel:", error);
@@ -156,11 +202,6 @@ export function CanvasView({
   async function checkForWords(canvasData: number[][]) {
     try {
       setApiError(null);
-      
-      ui.showToast({
-        text: "Processing word detection...",
-        appearance: "neutral"
-      });
       
       // Use local function instead of API call
       const result = decodeWordMatrix(canvasData);
@@ -176,13 +217,13 @@ export function CanvasView({
         challengeId: challengeId,
         type: 'words'
       });
-      
-      ui.showToast({
-        text: `Found ${Object.keys(result).length} possible words`,
-        appearance: "success"
-      });
+
+      // Give credit to the user who placed the final pixel
+      if (hasValidWords && lastActiveUser && username) {
+        await incrementUserWordCount(redis, username, Object.values(result).filter(v => v === "true").length);
+      }
     } catch (error) {
-      const errorMsg = `Error processing words: ${error instanceof Error ? error.message : String(error)}`;
+      const errorMsg = `Error processing words: ${error instanceof Error ? error.message : String(error)}`; 
       console.error("Word detection error:", errorMsg);
       setApiError(errorMsg);
       ui.showToast({
@@ -191,56 +232,14 @@ export function CanvasView({
       });
     }
   }
-  
-  // Add function to create a new challenge
-  async function handleCreateChallenge() {
-    // Create a new challenge
-    const newChallengeId = await createNewChallenge(redis);
-    setLocalChallengeId(newChallengeId);
-    
-    // Reset canvas
-    setCanvas(createEmptyCanvas());
-    setWords({});
-    
-    ui.showToast({
-      text: `Created Challenge #${newChallengeId}`,
-      appearance: "success"
-    });
-  }
 
   // Check if there are valid words
   const hasValidWords = Object.values(words).includes("true");
-  
-  // Get only valid words
-  const validWords = Object.entries(words)
-    .filter(([_, isValid]) => isValid === "true")
-    .map(([word]) => word);
 
   // Render the canvas grid with green highlight when valid words are found
   const renderGrid = () => {
     return (
       <zstack>
-        {/* show the a congratulation message if there is a valid word */}
-        {validWords.length > 0 && (
-          <zstack
-            width="100%"
-            height="100%"
-            alignment="center middle"
-          >
-            <vstack 
-              padding="small" 
-              gap="small" 
-              backgroundColor="rgba(0, 200, 0, 0.1)"
-              cornerRadius="medium"
-              border="thin"
-              borderColor="green"
-            >
-              {validWords.slice(0, 1).map(word => (
-                <PixelText color="green" size={4}>{word}</PixelText>
-              ))}
-            </vstack>
-          </zstack>
-        )}
         <vstack gap="none" border="thick" borderColor={hasValidWords ? "green" : "black"}>
           {canvas.map((row, y) => (
             <hstack gap="none">
@@ -257,22 +256,20 @@ export function CanvasView({
             </hstack>
           ))}
         </vstack>
-        
-        {/* Subtle green overlay when valid words are found */}
-        {hasValidWords && (
-          <vstack 
-            width="100%" 
-            height="100%"
-            border="thick" 
-            borderColor="green"
-          />
-        )}
       </zstack>
     );
   };
 
   // Render word results with a fixed layout (4 rows max, 4 words per row max)
   const renderWords = () => {
+    if (wordsLoading) {
+      return (
+        <vstack gap="small" padding="small" cornerRadius="medium" alignment="center middle">
+          <PixelText color="black" size={1.5}>Loading words...</PixelText>
+        </vstack>
+      );
+    }
+    
     if (Object.keys(words).length === 0) {
       if (apiError) {
         return (
@@ -306,17 +303,46 @@ export function CanvasView({
           <hstack gap="medium" alignment="center middle">
             {row.map(([word, isValid], index, arr) => (
               <hstack alignment="center middle">
-                <PixelText 
-                  color={isValid === "true" ? "green" : "black"} 
-                  size={1.8}
-                >
-                  {word}
-                </PixelText>
+                {
+                  isValid === "true" ? (
+                    <vstack
+                      padding="xsmall" 
+                      backgroundColor="black"
+                      border="thick"
+                      borderColor="black"
+                    >
+                      <PixelText 
+                        color="white" 
+                        size={1.8}
+                      >
+                        {word}
+                      </PixelText>
+                    </vstack>
+                  )
+                  :
+                  (
+                    <PixelText 
+                      color="black" 
+                      size={1.8}
+                    >
+                      {word}
+                    </PixelText>
+                  )
+                }
                 {index < arr.length - 1 && <PixelText color="black" size={1.5}> - </PixelText>}
               </hstack>
             ))}
           </hstack>
         ))}
+        
+        {/* Display last active user if words are valid */}
+        {hasValidWords && lastActiveUser && (
+          <vstack padding="small" alignment="center">
+            <PixelText color="green" size={1.5}>
+              {`Last pixel placed by: ${lastActiveUser.username}`}
+            </PixelText>
+          </vstack>
+        )}
       </vstack>
     );
   };
@@ -362,14 +388,27 @@ export function CanvasView({
           {localChallengeId ? `CHALLENGE #${localChallengeId}` : 'PIXEL CANVAS'}
         </PixelText>
 
-        <spacer height="5px" />
+        {/* Show decoder username when puzzle is solved */}
+        {hasValidWords && (
+          <hstack padding="small" backgroundColor='white' alignment="center middle">
+            <PixelText color="green" size={2}>
+              {`DECODED ${lastActiveUser ? `BY ${lastActiveUser.username}` : ''}`}
+            </PixelText>
+          </hstack>
+        )}
+
+        {
+          !hasValidWords && (
+            <spacer height="2px" />
+          )
+        }
         {renderGrid()}
 
         {/* Words section with arrows */}
-        <zstack height="90px" width="100%" backgroundColor='rgba(115, 113, 252)' alignment="center middle">
+        <zstack height="95px" width="100%" alignment="center middle">
           {renderWords()}
         </zstack>
-    </vstack>
+      </vstack>
 
       {/* Back */}
       <zstack
@@ -387,7 +426,7 @@ export function CanvasView({
           backgroundColor="rgba(115, 113, 252)"
           alignment="center middle"
         >
-          <PixelText color="black" size={1.5}>BACK</PixelText>
+          <PixelText color="black" size={1.5}>HOME</PixelText>
         </zstack>
       </zstack>
       
