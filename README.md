@@ -4,6 +4,8 @@
 
 ![preview](assets/playing.gif)
 
+you can play here: [r/decod](https://www.reddit.com/r/decod/)
+
 ## How to run
 First, you need to install devvit [instructions here](https://developers.reddit.com/docs/quickstart)
 
