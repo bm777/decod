@@ -87,11 +87,7 @@ graph LR
     
     I[View Leaderboard] -->|Get Rankings| J[LeaderboardView]
     J -->|Fetch Data| C
-    
-    style A,G,I fill:#ff9,stroke:#333,stroke-width:2px
-    style B,J fill:#bbf,stroke:#333,stroke-width:2px
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style E fill:#bfb,stroke:#333,stroke-width:2px
+
 ```
 
 ### main Tech Stack
@@ -109,8 +105,4 @@ graph LR
     I[View Leaderboard] -->|Get Rankings| J[LeaderboardView]
     J -->|Fetch Data| C
     
-    style A,G,I fill:#ff9,stroke:#333,stroke-width:2px
-    style B,J fill:#bbf,stroke:#333,stroke-width:2px
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style E fill:#bfb,stroke:#333,stroke-width:2px
 ```
