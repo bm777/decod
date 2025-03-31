@@ -95,20 +95,3 @@ graph LR
     J -->|Fetch Data| C
 
 ```
-
-### main Tech Stack
-```mermaid
-graph LR
-    A[User Input] -->|Place Pixel| B[CanvasView]
-    B -->|Update Canvas| C[Redis]
-    B -->|Real-time Updates| D[Other Users]
-    B -->|Word Detection| E[decodeMatrix]
-    E -->|Valid Words Found| F[Leaderboard]
-    
-    G[New Challenge] -->|Create Post| H[Reddit API]
-    H -->|Store Link| C
-    
-    I[View Leaderboard] -->|Get Rankings| J[LeaderboardView]
-    J -->|Fetch Data| C
-    
-```
