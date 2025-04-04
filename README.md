@@ -1,4 +1,4 @@
-# Decod 2D matrix
+# Decod 2D matrix to form an english word
 
 ### preview
 
